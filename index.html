@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Magic Apple Store 🍎</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" type="text/css" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/magic-sdk/dist/magic.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.11.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.11.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.11.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.11.0/firebase-functions.js"></script>
+    <script>
+      const magic = new Magic("pk_test_42945450ECFC94EA");
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyDiCyfh63_I8Bo-FPnEQ1K_f5kKFOZpVhw",
+        authDomain: "fir-demo-integration.firebaseapp.com",
+        databaseURL: "https://fir-demo-integration.firebaseio.com",
+        projectId: "fir-demo-integration",
+        storageBucket: "fir-demo-integration.appspot.com",
+        messagingSenderId: "550400757157",
+        appId: "1:550400757157:web:c835e300e6854e4fc26c4c",
+        measurementId: "G-Q79D0S1GE1"
+      };
+
+      /* Initialize Firebase */
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+      const usersCollection = db.collection("users");
+
+      const render = async () => {
+        /* Show login form if user is not logged in */
+        const currentUser = firebase.auth().currentUser;
+        let html = `
+          <h1>Please sign up or login</h1>
+          <form onsubmit="handleLogin(event)">
+            <input type="email" name="email" required="required" placeholder="Enter your email" />
+            <button id="btn-send" type="submit">Send</button>
+          </form>
+        `;
+        if (currentUser) {
+          try {
+            let user = await usersCollection.doc(currentUser.uid).get();
+            if (user.exists) {
+              let userData = user.data();
+              let appleCount = userData.appleCount;
+              let appleDisplay =
+                appleCount > 0
+                  ? "🍎".repeat(appleCount)
+                  : "You have no apples...";
+              html = `
+              <h1>Current user: ${userData.email}</h1>
+              <div id="apple-count">${appleDisplay}</div>
+              <button onclick="handleBuyApple()">Buy Apple</button>
+              <button onclick="handleLogout()">Logout</button>
+            `;
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+        document.getElementById("app").innerHTML = html;
+      };
+
+      const handleLogin = async e => {
+        e.preventDefault();
+        const email = new FormData(e.target).get("email");
+        if (email) {
+          const btnSend = document.getElementById("btn-send");
+          btnSend.disabled = true;
+          btnSend.innerText = "Logging in...";
+          /* One-liner login 🤯 */
+          const didToken = await magic.auth.loginWithMagicLink({ email });
+          const auth = firebase.functions().httpsCallable("auth");
+          let result = (await auth({ didToken })).data;
+          await firebase.auth().signInWithCustomToken(result.token);
+          let user = await usersCollection.doc(result.uid).get();
+          if (!user.exists) {
+            /* Add new user to database */
+            let newUser = {
+              email: email,
+              appleCount: 0
+            };
+            await usersCollection.doc(result.uid).set(newUser);
+            console.log(`User ${email} just signed up!`);
+          }
+          render();
+        }
+      };
+
+      const handleLogout = async () => {
+        await magic.user.logout();
+        await firebase.auth().signOut();
+        render();
+      };
+
+      const handleBuyApple = async () => {
+        const currentUser = firebase.auth().currentUser;
+        if (currentUser) {
+          let user = await usersCollection.doc(currentUser.uid).get();
+          if (user.exists) {
+            await usersCollection.doc(currentUser.uid).update({
+              appleCount: user.data().appleCount + 1
+            });
+            render();
+          }
+        }
+      };
+    </script>
+  </head>
+  <body onload="render()">
+    <div id="app">Loading...</div>
+  </body>
+</html>
